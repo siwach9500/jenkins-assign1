@@ -1,0 +1,92 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven3'
+        jdk 'JDK11'
+    }
+
+    parameters {
+        choice(
+            name: 'BUILD_ACTION',
+            choices: ['compile', 'test', 'both'],
+            description: 'Choose Maven action'
+        )
+    }
+
+    stages {
+
+        stage('Check Gitleaks') {
+            steps {
+                sh 'gitleaks version'
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/OT-MyGurukulam/spring3hibernate.git'
+            }
+        }
+
+        stage('GitLeaks Scan') {
+            steps {
+                sh '''
+                    gitleaks detect \
+                      --source . \
+                      --report-format json \
+                      --report-path gitleaks-report.json \
+                      || true
+                '''
+            }
+        }
+
+        stage('Approval Gate') {
+            steps {
+                input message: 'Approve to start Maven build?', ok: 'Start Build'
+            }
+        }
+
+        stage('Parallel Build & Test') {
+            when {
+                expression { params.BUILD_ACTION == 'both' }
+            }
+
+            steps {
+                parallel(
+                    Compile: {
+                        sh 'mvn compile -DskipTests -Dfindbugs.skip=true'
+                    },
+                    Test: {
+                        sh 'mvn test -Dfindbugs.skip=true'
+                    }
+                )
+            }
+        }
+
+        stage('Compile Only') {
+            when {
+                expression { params.BUILD_ACTION == 'compile' }
+            }
+
+            steps {
+                sh 'mvn compile -DskipTests -Dfindbugs.skip=true'
+            }
+        }
+
+        stage('Test Only') {
+            when {
+                expression { params.BUILD_ACTION == 'test' }
+            }
+
+            steps {
+                sh 'mvn test -Dfindbugs.skip=true'
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'gitleaks-report.json'
+        }
+    }
+}
