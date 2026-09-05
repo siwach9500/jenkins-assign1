@@ -1,0 +1,174 @@
+pipeline {
+    agent any
+
+    environment {
+        COVERAGE_REPORT = 'target/site/cobertura/coverage.xml'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git(
+                    branch: 'master',
+                    url: 'https://github.com/opstree/spring3hibernate.git'
+                )
+            }
+        }
+
+        stage('Gitleaks') {
+            steps {
+                sh '''
+                    gitleaks detect \
+                        --source . \
+                        --verbose \
+                        --report-path gitleaks-report.json || true
+                '''
+            }
+        }
+
+        stage('Compile') {
+            steps {
+                sh 'mvn clean compile -Dfindbugs.skip=true'
+            }
+        }
+        
+        stage('Package') {
+            steps {
+                sh 'mvn package -DskipTests'
+
+                sh '''
+                    echo "Contents of target:"
+                    ls -lah target/
+
+                    echo "WAR file:"
+                    find target -maxdepth 1 -type f -name "*.war" -print
+                '''
+            }
+        }
+    /*
+        stage('Test') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Cobertura Coverage Check') {
+            steps {
+                cobertura(
+                    autoUpdateHealth: false,
+                    autoUpdateStability: false,
+                    coberturaReportFile: "${COVERAGE_REPORT}",
+                    failNoReports: true,
+                    failUnhealthy: true,
+                    maxNumberOfBuilds: 0,
+                    onlyStable: false,
+                    sourceEncoding: 'UTF-8',
+                    zoomCoverageChart: false
+                )
+            }
+        }
+   */
+        stage('Parallel Execution') {
+            parallel {
+
+                stage('Additional Test') {
+                    steps {
+                        sh 'mvn test'
+                    }
+                }
+
+                stage('Additional Coverage Check') {
+                    steps {
+                        cobertura(
+                            autoUpdateHealth: false,
+                            autoUpdateStability: false,
+                            coberturaReportFile: "${COVERAGE_REPORT}",
+                            failNoReports: true,
+                            failUnhealthy: true,
+                            maxNumberOfBuilds: 0,
+                            onlyStable: false,
+                            zoomCoverageChart: false
+                        )
+                    }
+                }
+            }
+        }
+    
+
+
+        /*
+        stage('OWASP Dependency Check') {
+            steps {
+                sh '''
+                    mvn org.owasp:dependency-check-maven:check \
+                        -DfailBuildOnCVSS=7 \
+                        -Dformat=HTML \
+                        -Dformat=JSON
+                '''
+            }
+        }
+        
+        stage('Package') {
+            steps {
+                sh 'mvn package -DskipTests'
+            }
+        }
+
+        */
+        stage('Archive Artifact') {
+            steps {
+
+                input(
+                    message: 'Do you want to archive the build artifact?',
+                    ok: 'Archive Artifact'
+                )
+
+                archiveArtifacts(
+                    artifacts: 'target/*.war',
+                    fingerprint: true,
+                    allowEmptyArchive: false
+                )
+            }
+        }
+
+        stage('Archive Gitleaks Report') {
+            steps {
+                archiveArtifacts(
+                    artifacts: 'gitleaks-report.json',
+                    fingerprint: true,
+                    allowEmptyArchive: true
+                )
+            }
+        }
+        
+        stage('Create Git Tag') { 
+            when { 
+                branch 'master' 
+            }
+            
+            steps { 
+                sh '''
+                    TAG_NAME="v1.0.${BUILD_NUMBER}" 
+                    echo "Creating Git tag: ${TAG_NAME}" 
+                    git tag -a "${TAG_NAME}" -m "Release ${TAG_NAME}" 
+                 '''
+            } 
+            
+        }
+    }
+}
+
+    post {
+        success {
+            echo 'Build completed successfully!'
+        }
+
+        failure {
+            echo 'Build failed!'
+        }
+
+        always {
+            echo 'Pipeline execution completed.'
+        }
+    }
