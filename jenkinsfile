@@ -129,7 +129,7 @@ pipeline {
         
         stage('Create Git Tag') { 
             when { 
-                branch 'master' 
+                branch 'main' 
             }
             
             steps { 
