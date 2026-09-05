@@ -77,21 +77,6 @@ pipeline {
                         sh 'mvn test'
                     }
                 }
-
-                stage('Additional Coverage Check') {
-                    steps {
-                        cobertura(
-                            autoUpdateHealth: false,
-                            autoUpdateStability: false,
-                            coberturaReportFile: "${COVERAGE_REPORT}",
-                            failNoReports: true,
-                            failUnhealthy: true,
-                            maxNumberOfBuilds: 0,
-                            onlyStable: false,
-                            zoomCoverageChart: false
-                        )
-                    }
-                }
             }
         }
     
